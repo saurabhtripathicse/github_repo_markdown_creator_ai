@@ -75,6 +75,10 @@ def fetch_raw_content(owner: str, repo: str, path: str, branch: str = "main") ->
     Returns:
         Raw file content
     """
+    # Skip directories which will always fail with raw content URLs
+    if path.endswith(("/", "/.github", "/.vscode", "/docs")) or "/" in path and not any(path.endswith(ext) for ext in [".py", ".js", ".md", ".txt", ".json", ".toml", ".yml", ".yaml", ".c", ".cpp", ".h", ".java", ".go", ".rs", ".rb", ".php"]):
+        return ""
+        
     raw_url = f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}"
     
     try:
@@ -82,7 +86,9 @@ def fetch_raw_content(owner: str, repo: str, path: str, branch: str = "main") ->
         response.raise_for_status()
         return response.text
     except requests.RequestException as e:
-        logger.warning(f"Failed to fetch raw content from {raw_url}: {str(e)}")
+        # Only log warnings for files that should exist, not directories
+        if not path.endswith("/") and "." in path.split("/")[-1]:
+            logger.warning(f"Failed to fetch raw content from {raw_url}: {str(e)}")
         
         # Try alternate branch if main fails
         if branch == "main":
@@ -92,7 +98,8 @@ def fetch_raw_content(owner: str, repo: str, path: str, branch: str = "main") ->
                 response.raise_for_status()
                 return response.text
             except requests.RequestException:
-                logger.warning(f"Failed to fetch from alternate branch (master)")
+                if not path.endswith("/") and "." in path.split("/")[-1]:
+                    logger.warning(f"Failed to fetch from alternate branch (master)")
         
         return ""
 
@@ -281,12 +288,53 @@ def generate_docs(repo_url: str, output_dir: str = "output", open_docs: bool = T
         except Exception as e:
             logger.warning(f"Failed to open documentation: {str(e)}")
 
+def check_github_rate_limit() -> bool:
+    """
+    Check GitHub API rate limit status
+    
+    Returns:
+        True if rate limit is sufficient, False otherwise
+    """
+    headers = {}
+    if GITHUB_TOKEN:
+        headers["Authorization"] = f"token {GITHUB_TOKEN}"
+    
+    try:
+        response = requests.get("https://api.github.com/rate_limit", headers=headers)
+        response.raise_for_status()
+        rate_data = response.json()
+        
+        # Get core rate limit info
+        core_limit = rate_data.get("resources", {}).get("core", {})
+        remaining = core_limit.get("remaining", 0)
+        limit = core_limit.get("limit", 0)
+        reset_time = core_limit.get("reset", 0)
+        
+        # Calculate time until reset
+        reset_datetime = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(reset_time))
+        
+        # Log rate limit information
+        logger.info(f"GitHub API Rate Limit: {remaining}/{limit} requests remaining")
+        logger.info(f"Rate limit resets at: {reset_datetime}")
+        
+        # Check if we have enough requests remaining (at least 50)
+        if remaining < 50:
+            logger.error(f"GitHub API rate limit too low: {remaining}/{limit} requests remaining")
+            logger.error(f"Rate limit will reset at {reset_datetime}")
+            return False
+        
+        return True
+    except requests.RequestException as e:
+        logger.error(f"Failed to check GitHub rate limit: {str(e)}")
+        return False
+
 def main():
     """Main entry point"""
     parser = argparse.ArgumentParser(description="Generate documentation for GitHub repositories")
     parser.add_argument("repo_url", help="GitHub repository URL (e.g., https://github.com/owner/repo or owner/repo)")
     parser.add_argument("--output-dir", "-o", default="output", help="Output directory")
     parser.add_argument("--no-open", action="store_true", help="Don't open documentation after generation")
+    parser.add_argument("--force", "-f", action="store_true", help="Force generation even if rate limit is low")
     args = parser.parse_args()
     
     # Check for required environment variables
@@ -295,6 +343,11 @@ def main():
     
     if not OPENAI_API_KEY:
         logger.error("OPENAI_API_KEY environment variable is not set")
+        sys.exit(1)
+    
+    # Check GitHub rate limit
+    if not args.force and not check_github_rate_limit():
+        logger.error("GitHub API rate limit is too low. Use --force to generate documentation anyway.")
         sys.exit(1)
     
     # Generate documentation

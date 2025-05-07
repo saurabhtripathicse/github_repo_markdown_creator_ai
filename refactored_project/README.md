@@ -25,17 +25,20 @@ This project provides a simple command-line tool that:
 ## Installation
 
 1. Clone this repository:
+
    ```bash
    git clone https://github.com/yourusername/github-doc-generator.git
    cd github-doc-generator
    ```
 
 2. Install dependencies:
+
    ```bash
    pip install -r requirements.txt
    ```
 
 3. Set up environment variables:
+
    ```bash
    # Create a .env file
    touch .env
@@ -61,11 +64,20 @@ python github_doc_generator.py https://github.com/owner/repo --output-dir docs
 
 # Don't open documentation after generation
 python github_doc_generator.py https://github.com/owner/repo --no-open
+
+# Force documentation generation even if GitHub rate limit is low
+python github_doc_generator.py https://github.com/owner/repo --force
 ```
+
+### GitHub Rate Limiting
+
+The tool automatically checks GitHub API rate limits before starting documentation generation to prevent failures due to rate limiting. If the remaining rate limit is too low (less than 50 requests), the tool will exit with an error message.
+
+You can use the `--force` flag to bypass this check and proceed with documentation generation anyway, but be aware that you may encounter rate limit errors during the process.
 
 ## Project Structure
 
-```
+```bash
 github-doc-generator/
 ├── github_doc_generator.py  # Main script
 ├── ai_generator.py          # AI-powered documentation generation
