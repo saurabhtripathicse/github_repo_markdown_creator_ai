@@ -364,10 +364,13 @@ def generate_docs(repo_url: str, output_dir: str = "output", open_docs: bool = T
         except Exception as e:
             logger.warning(f"Failed to open documentation: {str(e)}")
 
-def check_github_rate_limit() -> bool:
+def check_github_rate_limit(force: bool = False) -> bool:
     """
     Check GitHub API rate limit status
     
+    Args:
+        force: Whether to force execution even if rate limit is low
+        
     Returns:
         True if rate limit is sufficient, False otherwise
     """
@@ -400,27 +403,40 @@ def check_github_rate_limit() -> bool:
         logger.info(f"GitHub API Rate Limit: {remaining}/{limit} requests remaining")
         logger.info(f"Rate limit resets at: {reset_datetime_ampm} (in {time_remaining_str})")
         
-        # Check if we have enough requests remaining (at least 50)
-        if remaining < 50:
+        # Define threshold for rate limit (at least 100 requests needed)
+        threshold = 100
+        
+        # Check if we have enough requests remaining
+        if remaining < threshold:
+            message = f"\nGitHub API rate limit too low: {remaining}/{limit} requests remaining\n"
+            message += f"Rate limit will reset at {reset_datetime_ampm} (in {time_remaining_str})\n"
+            message += f"Please try again after {time_remaining_str} when the rate limit resets.\n"
+            
+            if force:
+                message += "\nYou used --force, but execution is still blocked due to rate limiting.\n"
+                message += "This is to prevent incomplete documentation generation.\n"
+            else:
+                message += "\nUse --force to attempt execution anyway (not recommended).\n"
+            
+            print(message)
             logger.error(f"GitHub API rate limit too low: {remaining}/{limit} requests remaining")
             logger.error(f"Rate limit will reset at {reset_datetime_ampm} (in {time_remaining_str})")
-            print(f"\nERROR: GitHub API rate limit too low ({remaining}/{limit} requests remaining)")
-            print(f"You can retry in {time_remaining_str} when the rate limit resets.")
-            print("Use --force to proceed anyway (not recommended).")
-            return False
+            
+            # Always exit when rate limit is too low, regardless of force flag
+            sys.exit(1)
         
         return True
     except requests.RequestException as e:
         logger.error(f"Failed to check GitHub rate limit: {str(e)}")
-        return False
+        print(f"\nERROR: Failed to check GitHub rate limit: {str(e)}")
+        print("Please check your internet connection and try again.")
+        sys.exit(1)
 
 # Global variable to track if we're in a rate-limited state
 RATE_LIMITED = False
 
 def main():
     """Main entry point"""
-    global RATE_LIMITED
-    
     parser = argparse.ArgumentParser(description="Generate documentation for GitHub repositories")
     parser.add_argument("repo_url", help="GitHub repository URL (e.g., https://github.com/owner/repo or owner/repo)")
     parser.add_argument("--output-dir", "-o", default="output", help="Output directory")
@@ -437,16 +453,10 @@ def main():
         logger.error("OPENAI_API_KEY environment variable is not set")
         sys.exit(1)
     
-    # Check GitHub rate limit
-    rate_limit_ok = check_github_rate_limit()
-    if not rate_limit_ok:
-        if args.force:
-            logger.warning("Proceeding with --force flag, but GitHub API extraction will be limited")
-            RATE_LIMITED = True
-        else:
-            logger.error("GitHub API rate limit is too low. Use --force to generate documentation anyway.")
-            sys.exit(1)
+    # Check GitHub rate limit - this will exit if rate limit is too low
+    check_github_rate_limit(force=args.force)
     
+    # If we get here, rate limit is sufficient
     # Generate documentation
     generate_docs(args.repo_url, args.output_dir, not args.no_open, skip_github=args.skip_github)
 
