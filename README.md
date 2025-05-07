@@ -64,13 +64,34 @@ python github_doc_generator.py https://github.com/owner/repo --no-open
 
 # Force documentation generation even if GitHub rate limit is low
 python github_doc_generator.py https://github.com/owner/repo --force
+
+# Skip GitHub API extraction and use cached data if available
+python github_doc_generator.py https://github.com/owner/repo --skip-github
 ```
 
 ### GitHub Rate Limiting
 
 The tool automatically checks GitHub API rate limits before starting documentation generation to prevent failures due to rate limiting. If the remaining rate limit is too low (less than 50 requests), the tool will exit with an error message.
 
-You can use the `--force` flag to bypass this check and proceed with documentation generation anyway, but be aware that you may encounter rate limit errors during the process.
+The tool provides several options for handling rate limits:
+
+1. **Rate Limit Check**: The tool checks your GitHub API rate limit before starting and shows:
+   - Current remaining requests
+   - When the rate limit will reset (in AM/PM format)
+   - Time remaining until reset
+
+2. **Smart Rate Limit Handling**:
+   - If rate limit is exceeded during execution, the tool will stop making GitHub API requests
+   - The tool will use any data already collected to generate documentation
+   - A warning message will be displayed in the output
+
+3. **Cached Repository Data**:
+   - Repository data is cached for future use
+   - If rate limited, the tool will try to use cached data if available
+
+4. **Command Line Options**:
+   - `--force`: Proceed even if rate limit is low (will still stop API requests if limit is hit)
+   - `--skip-github`: Skip GitHub API extraction entirely and use cached data if available
 
 ## Project Structure
 
