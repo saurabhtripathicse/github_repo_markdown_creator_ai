@@ -50,20 +50,20 @@ This project provides a simple command-line tool that:
 Generate documentation for a GitHub repository:
 
 ```bash
-python github_doc_generator.py https://github.com/owner/repo
+python github_doc_gen.py https://github.com/owner/repo
 ```
 
 Additional options:
 
 ```bash
 # Specify output directory
-python github_doc_generator.py https://github.com/owner/repo --output-dir docs
+python github_doc_gen.py https://github.com/owner/repo --output-dir docs
 
 # Don't open documentation after generation
-python github_doc_generator.py https://github.com/owner/repo --no-open
+python github_doc_gen.py https://github.com/owner/repo --no-open
 
 # Skip GitHub API extraction and use cached data if available
-python github_doc_generator.py https://github.com/owner/repo --skip-github
+python github_doc_gen.py https://github.com/owner/repo --skip-github
 ```
 
 ### GitHub Rate Limiting
@@ -92,10 +92,11 @@ The tool provides strict rate limit protection:
 
 ## Project Structure
 
-```
-github-doc-generator/
-├── github_doc_generator.py  # Main script
-├── ai_generator.py          # AI-powered documentation generation
+```bash
+github-doc-scanner/
+├── github_doc_gen.py        # Main script with strict rate limit handling
+├── src/                     # Source code
+│   ├── ai_generator.py      # AI-powered documentation generation
 ├── requirements.txt         # Python dependencies
 ├── .env                     # Environment variables
 └── output/                  # Generated documentation
