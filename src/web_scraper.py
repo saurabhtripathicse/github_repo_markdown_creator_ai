@@ -11,7 +11,14 @@ import time
 from typing import Dict, List, Any, Optional, Tuple
 import requests
 from bs4 import BeautifulSoup
-from duckduckgo_search import DDGS
+
+# Try to import duckduckgo_search, but make it optional
+try:
+    from duckduckgo_search import DDGS
+    DDGS_AVAILABLE = True
+except ImportError:
+    DDGS_AVAILABLE = False
+    logging.warning("duckduckgo_search package not available. Web search functionality will be limited.")
 
 # Configure logging
 logging.basicConfig(
@@ -25,7 +32,6 @@ class WebScraper:
     
     def __init__(self):
         """Initialize web scraper"""
-        self.search_engine = DDGS()
         self.user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         self.headers = {
             "User-Agent": self.user_agent
@@ -38,6 +44,12 @@ class WebScraper:
             "facebook.com",
             "twitter.com"
         ]
+        
+        # Initialize search engine if available
+        if DDGS_AVAILABLE:
+            self.search_engine = DDGS()
+        else:
+            self.search_engine = None
     
     def search_and_scrape(self, query: str, max_results: int = 5) -> str:
         """
@@ -52,6 +64,17 @@ class WebScraper:
         """
         logger.info(f"Searching for: {query}")
         
+        # Check if web search functionality is available
+        if not DDGS_AVAILABLE:
+            logger.warning("Full web search functionality is not available (duckduckgo_search package not installed)")
+            return f"# Web Search Results for: {query}\n\n" + \
+                   "Note: Full web search functionality is not available. " + \
+                   "To enable full web search, install the duckduckgo-search package:\n\n" + \
+                   "```\npip install duckduckgo-search\n```\n\n" + \
+                   "Here are some GitHub links that might be helpful:\n\n" + \
+                   f"- [GitHub Code Search for {query}](https://github.com/search?q={query.replace(' ', '+')}&type=code)\n" + \
+                   f"- [GitHub Repository Search for {query}](https://github.com/search?q={query.replace(' ', '+')}&type=repositories)\n"
+        
         # Search for relevant URLs
         try:
             search_results = self._search_web(query, max_results)
@@ -63,6 +86,10 @@ class WebScraper:
         
         # Process each search result
         markdown_output = f"# Web Search Results for: {query}\n\n"
+        
+        # Add note about limited functionality if duckduckgo_search is not available
+        if not DDGS_AVAILABLE:
+            markdown_output += "**Note:** Limited web search functionality is available.\n\n"
         
         for result in search_results:
             url = result.get('href', '')
@@ -100,7 +127,7 @@ class WebScraper:
     
     def _search_web(self, query: str, max_results: int = 5) -> List[Dict[str, str]]:
         """
-        Search the web using DuckDuckGo
+        Search the web using DuckDuckGo or fallback to a simple implementation
         
         Args:
             query: Search query
@@ -112,12 +139,30 @@ class WebScraper:
         try:
             # Add "code example" to the query to bias towards code-containing pages
             enhanced_query = f"{query} code example"
-            results = list(self.search_engine.text(enhanced_query, max_results=max_results))
-            logger.info(f"Found {len(results)} search results")
-            return results
+            
+            if DDGS_AVAILABLE and self.search_engine:
+                # Use DuckDuckGo search if available
+                results = list(self.search_engine.text(enhanced_query, max_results=max_results))
+                logger.info(f"Found {len(results)} search results using DuckDuckGo")
+                return results
+            else:
+                # Fallback implementation - return GitHub search results
+                logger.info("Using fallback search implementation (GitHub only)")
+                fallback_results = [
+                    {
+                        "title": f"GitHub: {query} code examples",
+                        "href": f"https://github.com/search?q={query.replace(' ', '+')}&type=code"
+                    },
+                    {
+                        "title": f"GitHub: {query} repositories",
+                        "href": f"https://github.com/search?q={query.replace(' ', '+')}&type=repositories"
+                    }
+                ]
+                return fallback_results[:max_results]
         except Exception as e:
             logger.error(f"Error during web search: {str(e)}")
-            raise
+            # Return empty results instead of raising an exception
+            return []
     
     def _scrape_code_snippets(self, url: str) -> List[Tuple[str, str]]:
         """

@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+"""
+Test script for enhanced GitHub Documentation Generator features.
+
+This script tests the enhanced features including:
+- Recursive repository fetching
+- Code sample extraction
+- Project structure analysis
+- Documentation generation with the enhanced AI Generator
+"""
+
+import os
+import sys
+import logging
+from dotenv import load_dotenv
+from src.github_fetcher import GitHubFetcher
+from src.ai_generator_enhanced import AIGenerator
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger('test_enhanced_features')
+
+# Load environment variables
+load_dotenv()
+
+def test_enhanced_features(repo_url: str):
+    """
+    Test enhanced features with a given repository URL
+    
+    Args:
+        repo_url: GitHub repository URL to test
+    """
+    logger.info(f"Testing enhanced features with repository: {repo_url}")
+    
+    # Extract owner and repo from URL
+    parts = repo_url.strip('/').split('/')
+    if len(parts) < 5 or parts[2] != 'github.com':
+        logger.error(f"Invalid GitHub URL: {repo_url}")
+        return
+    
+    owner = parts[3]
+    repo = parts[4]
+    
+    # Initialize GitHub fetcher
+    github_token = os.getenv("GITHUB_TOKEN")
+    if not github_token:
+        logger.error("GITHUB_TOKEN environment variable not set")
+        return
+    
+    fetcher = GitHubFetcher(token=github_token)
+    
+    try:
+        # Fetch repository data with enhanced features
+        logger.info(f"Fetching repository data for {owner}/{repo}")
+        repo_data = fetcher.fetch_repository(owner, repo)
+        
+        # Log repository info
+        logger.info(f"Repository: {repo_data['full_name']}")
+        logger.info(f"Description: {repo_data.get('description', 'No description')}")
+        logger.info(f"Default branch: {repo_data.get('default_branch', 'main')}")
+        logger.info(f"Stars: {repo_data.get('stars', 0)}")
+        logger.info(f"Language: {repo_data.get('language', 'Unknown')}")
+        
+        # Log project structure
+        logger.info(f"Detected project structure: {repo_data.get('project_structure', 'generic')}")
+        
+        # Log example files
+        example_files = repo_data.get("example_files", [])
+        logger.info(f"Found {len(example_files)} example files")
+        for i, example in enumerate(example_files[:3]):  # Log first 3 examples
+            logger.info(f"Example {i+1}: {example.get('path', 'Unknown path')}")
+        
+        # Log code samples
+        code_samples = repo_data.get("code_samples", [])
+        logger.info(f"Found {len(code_samples)} code samples in markdown")
+        
+        # Log documentation files
+        doc_files = repo_data.get("doc_files", [])
+        logger.info(f"Found {len(doc_files)} documentation files")
+        
+        # Initialize enhanced AI Generator
+        logger.info("Initializing enhanced AI Generator")
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if not openai_api_key:
+            logger.error("OPENAI_API_KEY environment variable not set")
+            return
+        
+        ai_generator = AIGenerator()
+        
+        # Generate documentation
+        logger.info("Generating documentation with enhanced AI Generator")
+        docs_content = ai_generator.generate_docs_content(repo_data)
+        
+        # Save documentation to files
+        output_dir = f"output/{owner}_{repo}"
+        os.makedirs(output_dir, exist_ok=True)
+        
+        for filename, content in docs_content.items():
+            file_path = os.path.join(output_dir, filename)
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            logger.info(f"Saved {filename} to {file_path}")
+        
+        logger.info(f"Documentation generation complete. Files saved to {output_dir}")
+        
+    except Exception as e:
+        logger.error(f"Error testing enhanced features: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print("Usage: python test_enhanced_features.py <github_repo_url>")
+        sys.exit(1)
+    
+    repo_url = sys.argv[1]
+    test_enhanced_features(repo_url)

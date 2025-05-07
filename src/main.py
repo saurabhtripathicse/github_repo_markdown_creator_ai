@@ -140,11 +140,19 @@ async def generate_docs(request: GenerateDocsRequest) -> Dict[str, Any]:
             logger.error(f"Invalid GitHub URL: {request.repo_url}")
             raise HTTPException(status_code=400, detail=f"Invalid GitHub URL: {str(e)}")
         
-        # Fetch repository data
+        # Fetch repository data with enhanced features
         try:
-            logger.info(f"Fetching repository data for {owner}/{repo}")
+            logger.info(f"Fetching repository data for {owner}/{repo} with enhanced features")
             repo_data = github_fetcher.fetch_repository(owner, repo)
-            logger.info(f"Successfully fetched repository data with {len(repo_data.get('root_files', []))} root files")
+            
+            # Log enhanced repository data information
+            logger.info(f"Successfully fetched repository data:")
+            logger.info(f"- Root files: {len(repo_data.get('root_files', []))}")
+            logger.info(f"- Source files: {len(repo_data.get('src_files', []))}")
+            logger.info(f"- Example files: {len(repo_data.get('example_files', []))}")
+            logger.info(f"- Documentation files: {len(repo_data.get('doc_files', []))}")
+            logger.info(f"- Code samples from markdown: {len(repo_data.get('code_samples', []))}")
+            logger.info(f"- Project structure: {repo_data.get('project_structure', 'generic')}")
         except Exception as e:
             logger.error(f"Error fetching repository: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error fetching repository: {str(e)}")
@@ -164,10 +172,26 @@ async def generate_docs(request: GenerateDocsRequest) -> Dict[str, Any]:
                 logger.warning(f"Error during web search: {str(e)}")
                 # Continue without web search results if it fails
         
-        # Generate documentation
+        # Generate documentation using enhanced AI Generator
         try:
-            logger.info("Generating documentation content")
-            ai_generator = AIGenerator()
+            logger.info("Generating documentation content with enhanced features")
+            
+            # Use the enhanced AI Generator for better documentation
+            try:
+                from .ai_generator_enhanced import AIGenerator as EnhancedAIGenerator
+                ai_generator = EnhancedAIGenerator()
+                logger.info("Using enhanced AI Generator")
+            except ImportError:
+                # Fall back to original AI Generator if enhanced version is not available
+                logger.warning("Enhanced AI Generator not found, falling back to original version")
+                ai_generator = AIGenerator()
+            
+            # Process code samples and analyze project structure
+            logger.info(f"Repository has {len(repo_data.get('example_files', []))} example files")
+            logger.info(f"Repository has {len(repo_data.get('code_samples', []))} code samples from markdown")
+            logger.info(f"Detected project structure: {repo_data.get('project_structure', 'generic')}")
+            
+            # Generate documentation content
             docs_content = ai_generator.generate_docs_content(repo_data)
             logger.info(f"Generated {len(docs_content)} documentation files")
         except Exception as e:
@@ -179,6 +203,11 @@ async def generate_docs(request: GenerateDocsRequest) -> Dict[str, Any]:
             logger.info("Writing documentation to files")
             doc_writer = DocWriter()
             output_dir = f"docs/{owner}_{repo}"
+            
+            # Create output directory if it doesn't exist
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # Write documentation files
             file_paths = doc_writer.write_docs(docs_content, output_dir)
             logger.info(f"Documentation written to {output_dir}")
             

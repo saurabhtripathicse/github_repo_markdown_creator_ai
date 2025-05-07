@@ -1,0 +1,373 @@
+#!/usr/bin/env python3
+"""
+Simplified GitHub Documentation Generator
+
+This script provides a simplified version of the documentation generator
+that works without complex dependencies. It fetches a GitHub repository
+and generates basic documentation using OpenAI.
+"""
+
+import os
+import sys
+import re
+import json
+import time
+import requests
+import base64
+from urllib.parse import urlparse
+
+# Check for required environment variables
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+
+if not GITHUB_TOKEN:
+    print("Warning: GITHUB_TOKEN environment variable is not set.")
+    print("You may encounter rate limiting when accessing GitHub repositories.")
+    print("Set it with: export GITHUB_TOKEN=your_github_token")
+    print()
+
+if not OPENAI_API_KEY:
+    print("Error: OPENAI_API_KEY environment variable is not set.")
+    print("This is required for generating documentation.")
+    print("Set it with: export OPENAI_API_KEY=your_openai_api_key")
+    sys.exit(1)
+
+# Constants
+GITHUB_API_BASE = "https://api.github.com"
+MAX_FILE_SIZE = 500 * 1024  # 500 KB
+BINARY_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.ico', '.pdf', '.zip', '.tar', '.gz', '.exe', '.bin']
+
+def parse_github_url(url):
+    """Parse GitHub URL to extract owner and repository name"""
+    if url.startswith(("http://", "https://")):
+        parts = url.strip("/").split("/")
+        if "github.com" in parts and len(parts) >= 5:
+            return parts[-2], parts[-1]
+    elif "/" in url and len(url.split("/")) == 2:
+        return url.split("/")
+    
+    raise ValueError(f"Invalid GitHub URL format: {url}. Expected format: 'https://github.com/owner/repo' or 'owner/repo'")
+
+def make_github_request(endpoint, headers=None):
+    """Make a request to the GitHub API with proper headers"""
+    if headers is None:
+        headers = {}
+    
+    headers.update({
+        "Accept": "application/vnd.github.raw",
+        "User-Agent": "GitHub-Doc-Scanner"
+    })
+    
+    if GITHUB_TOKEN:
+        headers["Authorization"] = f"token {GITHUB_TOKEN}"
+    
+    url = f"{GITHUB_API_BASE}/{endpoint.lstrip('/')}"
+    print(f"Fetching: {url}")
+    
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    
+    return response
+
+def fetch_repository_info(owner, repo):
+    """Fetch basic repository information"""
+    try:
+        response = make_github_request(f"repos/{owner}/{repo}")
+        repo_info = response.json()
+        
+        return {
+            "name": repo_info.get("name", ""),
+            "full_name": repo_info.get("full_name", ""),
+            "description": repo_info.get("description", ""),
+            "default_branch": repo_info.get("default_branch", "main"),
+            "stars": repo_info.get("stargazers_count", 0),
+            "forks": repo_info.get("forks_count", 0),
+            "language": repo_info.get("language", ""),
+            "topics": repo_info.get("topics", []),
+            "homepage": repo_info.get("homepage", ""),
+            "created_at": repo_info.get("created_at", ""),
+            "updated_at": repo_info.get("updated_at", ""),
+            "license": repo_info.get("license", {}).get("name", "")
+        }
+    except Exception as e:
+        print(f"Error fetching repository info: {str(e)}")
+        return {
+            "name": repo,
+            "full_name": f"{owner}/{repo}",
+            "description": "",
+            "default_branch": "main"
+        }
+
+def fetch_readme(owner, repo):
+    """Fetch README file from repository"""
+    try:
+        response = make_github_request(f"repos/{owner}/{repo}/readme")
+        
+        if response.headers.get("Content-Type") == "application/vnd.github.raw":
+            content = response.text
+        else:
+            # Fall back to decoding base64 content
+            data = response.json()
+            content = base64.b64decode(data.get("content", "")).decode("utf-8")
+        
+        # Extract README format
+        name = data.get("name", "README.md").lower()
+        if name.endswith(".md"):
+            format = "markdown"
+        elif name.endswith((".rst", ".rest")):
+            format = "rst"
+        elif name.endswith(".txt"):
+            format = "text"
+        else:
+            format = "unknown"
+        
+        return {
+            "name": data.get("name", "README.md"),
+            "path": data.get("path", "README.md"),
+            "content": content,
+            "format": format
+        }
+    except Exception as e:
+        print(f"Error fetching README: {str(e)}")
+        return {
+            "name": "README.md",
+            "path": "README.md",
+            "content": "",
+            "format": "unknown"
+        }
+
+def fetch_root_files(owner, repo, branch):
+    """Fetch files in the root directory of the repository"""
+    try:
+        response = make_github_request(f"repos/{owner}/{repo}/contents?ref={branch}")
+        contents = response.json()
+        
+        root_files = []
+        for item in contents:
+            if item["type"] == "file" and not any(item["name"].endswith(ext) for ext in BINARY_EXTENSIONS):
+                if item["size"] <= MAX_FILE_SIZE:
+                    try:
+                        file_response = make_github_request(item["url"])
+                        content = file_response.text if file_response.headers.get("Content-Type") == "application/vnd.github.raw" else ""
+                    except Exception:
+                        content = ""
+                else:
+                    content = f"[File too large to include: {item['size']} bytes]"
+                
+                root_files.append({
+                    "name": item["name"],
+                    "path": item["path"],
+                    "type": "file",
+                    "size": item["size"],
+                    "content": content
+                })
+            elif item["type"] == "dir":
+                root_files.append({
+                    "name": item["name"],
+                    "path": item["path"],
+                    "type": "dir"
+                })
+        
+        return root_files
+    except Exception as e:
+        print(f"Error fetching root files: {str(e)}")
+        return []
+
+def fetch_repository(owner, repo):
+    """Fetch repository data including README and root files"""
+    print(f"Fetching repository data for {owner}/{repo}...")
+    
+    # Get repository info
+    repo_info = fetch_repository_info(owner, repo)
+    default_branch = repo_info.get("default_branch", "main")
+    
+    # Get README
+    readme = fetch_readme(owner, repo)
+    
+    # Get root files
+    root_files = fetch_root_files(owner, repo, default_branch)
+    
+    # Combine data
+    repo_data = {
+        "owner": owner,
+        "name": repo,
+        "full_name": f"{owner}/{repo}",
+        "description": repo_info.get("description", ""),
+        "default_branch": default_branch,
+        "stars": repo_info.get("stars", 0),
+        "forks": repo_info.get("forks", 0),
+        "language": repo_info.get("language", ""),
+        "topics": repo_info.get("topics", []),
+        "readme": readme,
+        "root_files": root_files
+    }
+    
+    return repo_data
+
+def generate_documentation(repo_data):
+    """Generate documentation using OpenAI"""
+    from openai import OpenAI
+    
+    client = OpenAI(api_key=OPENAI_API_KEY)
+    
+    # Prepare repository overview
+    repo_overview = f"""
+Repository: {repo_data['full_name']}
+Description: {repo_data['description']}
+Language: {repo_data['language']}
+Stars: {repo_data['stars']}
+Forks: {repo_data['forks']}
+Topics: {', '.join(repo_data['topics'])}
+    """
+    
+    # Prepare file structure
+    file_structure = "Repository structure:\n"
+    for file in repo_data['root_files']:
+        file_structure += f"- {file['path']} ({'directory' if file['type'] == 'dir' else 'file'})\n"
+    
+    # Prepare README content
+    readme_content = repo_data['readme'].get('content', '')
+    if len(readme_content) > 2000:
+        readme_content = readme_content[:2000] + "...[truncated]"
+    
+    # Prepare system prompt
+    system_prompt = """
+You are a documentation expert. Your task is to analyze the provided GitHub repository
+and generate comprehensive documentation. Focus on:
+1. Overview of the project
+2. Main modules and their purpose
+3. Usage examples
+4. Dependencies and requirements
+5. Architecture and design patterns
+    """
+    
+    # Prepare user prompt
+    user_prompt = f"""
+Please generate documentation for the following GitHub repository:
+
+{repo_overview}
+
+{file_structure}
+
+README content:
+{readme_content}
+
+Generate the following documentation files:
+1. OVERVIEW.md - A comprehensive overview of the project
+2. MODULES.md - Documentation of the main modules and components
+3. USAGE.md - Usage examples and instructions
+4. DEPENDENCIES.md - List of dependencies and requirements
+
+Format the documentation in Markdown.
+    """
+    
+    print("Generating documentation with OpenAI...")
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.2,
+            max_tokens=4000
+        )
+        
+        result = response.choices[0].message.content.strip()
+        
+        # Parse the result to extract individual documentation files
+        docs_content = {}
+        
+        # Extract sections based on markdown headers
+        current_file = None
+        current_content = []
+        
+        for line in result.split('\n'):
+            if re.match(r'^#+\s+(.+\.md)', line):
+                # Save previous file if exists
+                if current_file and current_content:
+                    docs_content[current_file] = '\n'.join(current_content)
+                    current_content = []
+                
+                # Extract new filename
+                match = re.search(r'^#+\s+(.+\.md)', line)
+                if match:
+                    current_file = match.group(1)
+                else:
+                    current_file = None
+            elif current_file:
+                current_content.append(line)
+        
+        # Save the last file
+        if current_file and current_content:
+            docs_content[current_file] = '\n'.join(current_content)
+        
+        # If no files were extracted using headers, use default filenames
+        if not docs_content:
+            docs_content = {
+                "OVERVIEW.md": "# Project Overview\n\n" + result,
+                "MODULES.md": "# Modules\n\nSee OVERVIEW.md",
+                "USAGE.md": "# Usage\n\nSee OVERVIEW.md",
+                "DEPENDENCIES.md": "# Dependencies\n\nSee OVERVIEW.md"
+            }
+        
+        return docs_content
+    
+    except Exception as e:
+        print(f"Error generating documentation: {str(e)}")
+        return {
+            "ERROR.md": f"# Error Generating Documentation\n\nAn error occurred while generating documentation: {str(e)}"
+        }
+
+def write_documentation(docs_content, output_dir):
+    """Write documentation to files"""
+    os.makedirs(output_dir, exist_ok=True)
+    
+    written_files = []
+    for filename, content in docs_content.items():
+        file_path = os.path.join(output_dir, filename)
+        
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        
+        written_files.append(file_path)
+    
+    return written_files
+
+def main():
+    """Main function"""
+    if len(sys.argv) < 2:
+        print("Usage: python simple_doc_generator.py <github_repo_url>")
+        print("Example: python simple_doc_generator.py https://github.com/openai/openai-agents-python")
+        return 1
+    
+    repo_url = sys.argv[1]
+    
+    try:
+        # Parse GitHub URL
+        owner, repo = parse_github_url(repo_url)
+        print(f"Generating documentation for {owner}/{repo}...")
+        
+        # Fetch repository data
+        repo_data = fetch_repository(owner, repo)
+        
+        # Generate documentation
+        docs_content = generate_documentation(repo_data)
+        
+        # Write documentation to files
+        output_dir = f"docs/{owner}_{repo}"
+        written_files = write_documentation(docs_content, output_dir)
+        
+        print("\nDocumentation generated successfully!")
+        print("Generated files:")
+        for file_path in written_files:
+            print(f"- {file_path}")
+        
+        return 0
+    
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        return 1
+
+if __name__ == "__main__":
+    sys.exit(main())

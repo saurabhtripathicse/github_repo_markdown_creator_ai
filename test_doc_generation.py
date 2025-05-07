@@ -1,12 +1,21 @@
 #!/usr/bin/env python3
 """
-Test script for generating documentation directly without using the FastAPI server.
-This script demonstrates the markdown formatting capabilities.
+Enhanced Documentation Generator Test Script
+
+This script tests the enhanced GitHub Documentation Generator features including:
+- Recursive repository fetching
+- Code sample extraction
+- Project structure analysis
+- Documentation generation with the enhanced AI Generator
+
+It can be used directly without the FastAPI server.
 """
 
 import os
 import sys
 import logging
+import traceback
+from dotenv import load_dotenv
 from src.github_fetcher import GitHubFetcher
 from src.ai_generator import AIGenerator
 from src.doc_writer import DocWriter
@@ -18,6 +27,9 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger('test_doc_generation')
+
+# Load environment variables
+load_dotenv()
 
 def generate_documentation(repo_url):
     """
@@ -41,23 +53,40 @@ def generate_documentation(repo_url):
             logger.error(f"Invalid GitHub URL: {repo_url}")
             return []
         
-        # Fetch repository data
+        # Fetch repository data with enhanced features
         try:
-            logger.info(f"Fetching repository data for {owner}/{repo}")
+            logger.info(f"Fetching repository data for {owner}/{repo} with enhanced features")
             repo_data = github_fetcher.fetch_repository(owner, repo)
-            logger.info(f"Successfully fetched repository data with {len(repo_data.get('root_files', []))} root files")
+            
+            # Log enhanced repository data information
+            logger.info(f"Successfully fetched repository data:")
+            logger.info(f"- Root files: {len(repo_data.get('root_files', []))}")
+            logger.info(f"- Source files: {len(repo_data.get('src_files', []))}")
+            logger.info(f"- Example files: {len(repo_data.get('example_files', []))}")
+            logger.info(f"- Documentation files: {len(repo_data.get('doc_files', []))}")
+            logger.info(f"- Code samples from markdown: {len(repo_data.get('code_samples', []))}")
+            logger.info(f"- Project structure: {repo_data.get('project_structure', 'generic')}")
         except Exception as e:
             logger.error(f"Error fetching repository: {str(e)}")
+            traceback.print_exc()
             return []
         
-        # Generate documentation
+        # Generate documentation using enhanced AI Generator
         try:
-            logger.info("Generating documentation content")
+            logger.info("Generating documentation content with enhanced features")
+            
+            # Process code samples and analyze project structure
+            logger.info(f"Repository has {len(repo_data.get('example_files', []))} example files")
+            logger.info(f"Repository has {len(repo_data.get('code_samples', []))} code samples from markdown")
+            logger.info(f"Detected project structure: {repo_data.get('project_structure', 'generic')}")
+            
+            # Generate documentation content
             ai_generator = AIGenerator()
             docs_content = ai_generator.generate_docs_content(repo_data)
             logger.info(f"Generated {len(docs_content)} documentation files")
         except Exception as e:
             logger.error(f"Error generating documentation: {str(e)}")
+            traceback.print_exc()
             return []
         
         # Write documentation to files
