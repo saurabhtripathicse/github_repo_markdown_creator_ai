@@ -75,8 +75,8 @@ def check_github_rate_limit() -> None:
         logger.info(f"GitHub API Rate Limit: {remaining}/{limit} requests remaining")
         logger.info(f"Rate limit resets at: {reset_datetime_ampm} (in {time_remaining_str})")
         
-        # Define threshold for rate limit (at least 100 requests needed)
-        threshold = 100
+        # Define threshold for rate limit (at least 4995 requests needed for testing)
+        threshold = 4995
         
         # Check if we have enough requests remaining
         if remaining < threshold:
